@@ -1,8 +1,12 @@
 import unittest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, Mock, patch
+
+import pytest
 
 from src.database.models import User
 from src.config import detail
+from src.services.auth import auth_service
+from tests.mock_redis_methods import MockRedis
 
 
 def test_create_user(client, user, monkeypatch):
@@ -89,12 +93,59 @@ def test_login_user_with_wrong_email(client, user, session):
     assert payload["detail"] == detail.INVALID_EMAIL
 
 
-# def test_logout(client, session, user):
-#     current_user: User = session.query(User).filter(User.email == user.get('email')).first()
-#     headers = {'Authorization': f'Bearer {current_user.refresh_token}'}
-#     response = client.get('api/auth/logout', headers=headers)
+# @pytest.mark.asyncio
+# @patch.object(auth_service, "blocklist")
+
+# @pytest.fixture()
+# def test_logout(client, session, user, monkeypatch):
+#     monkeypatch.setattr("src.service.auth.Auth.is_blocklisted", value=False)
+#     current_user: User = session.query(User).filter(User.email == user.get("email")).first()
+#     current_user.confirmed = True
+#     current_user.is_active = True
+#     session.commit()
+#     response = client.post("/api/auth/login", data={"username": user.get("email"), "password": user.get("password")})
+#     assert response.status_code == 200, response.text
 #     payload = response.json()
-#     assert payload["message"] == detail.USER_IS_LOGOUT
+#     assert payload["token_type"] == "bearer"
+#     headers = {"Authorization": f"Bearer {payload['access_token']}"}
+#     response = client.post("/api/auth/logout", headers=headers)
+#     assert response.status_code == 200, response.text
+#     payload = response.json()
+#     assert payload["detail"] == detail.USER_IS_LOGOUT
+# @patch("redis.Redis")
+@patch("redis.Redis")
+def test_logout(mock_redis, client, session, user):
+    redis_cache = {
+        "foo": "bar",
+        "foobar": {"Foo": "Bar"}
+    }
+
+    mock_redis_obj = MockRedis(redis_cache)
+
+    # binding a side_effect of a MagicMock instance with redis methods we defined in the MockRedis class.
+    mock_redis_method = MagicMock()
+    mock_redis_method.hget = Mock(side_effect=mock_redis_obj.get)
+    mock_redis_method.hget = Mock(side_effect=mock_redis_obj.hget)
+    mock_redis_method.set = Mock(side_effect=mock_redis_obj.set)
+    mock_redis_method.hset = Mock(side_effect=mock_redis_obj.hset)
+    mock_redis_method.exists = Mock(side_effect=mock_redis_obj.exists)
+
+    # StrictRedis mock return_values is set as above mock_redis_method.
+    mock_redis.return_value = mock_redis_method
+
+    current_user: User = session.query(User).filter(User.email == user.get("email")).first()
+    current_user.confirmed = True
+    current_user.is_active = True
+    session.commit()
+    response = client.post("/api/auth/login", data={"username": user.get("email"), "password": user.get("password")})
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["token_type"] == "bearer"
+    headers = {"Authorization": f"Bearer {payload['access_token']}"}
+    response = client.post("/api/auth/logout", headers=headers)
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["detail"] == detail.USER_IS_LOGOUT
 
 
 def test_refresh_token_ok(client, session, user):

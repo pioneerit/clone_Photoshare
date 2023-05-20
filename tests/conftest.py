@@ -1,5 +1,6 @@
 import sys
 import os
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,6 +11,9 @@ from main import app
 from src.database.models import Base
 from src.database.db import get_db
 
+import src.services.auth as auth_module
+from tests.mock_redis_methods import MockRedis
+
 sys.path.append(os.getcwd())
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
@@ -19,6 +23,10 @@ engine = create_engine(
 )
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+@pytest.fixture(autouse=True)
+def mock_redis():
+    with patch.object(auth_module, 'redis', new_callable=MockRedis, create=True):
+        yield
 
 @pytest.fixture(scope="module")
 def session():
